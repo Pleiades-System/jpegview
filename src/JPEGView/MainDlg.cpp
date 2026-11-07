@@ -238,6 +238,7 @@ CMainDlg::CMainDlg(bool bForceFullScreen) {
 	m_dZoomMult = -1.0;
 	m_bDragging = false;
 	m_bDoDragging = false;
+	m_nPendingMButtonCommand = -1;
 	m_bWindowMoveCandidate = false;
 	m_bReplayingWindowMoveClick = false;
 	m_windowMoveStart = CPoint(0, 0);
@@ -862,16 +863,45 @@ LRESULT CMainDlg::OnRButtonUp(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*
 
 LRESULT CMainDlg::OnMButtonDown(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam, BOOL& /*bHandled*/) {
 	this->SetCapture();
-	if (HandleMouseButtonByKeymap(VK_MBUTTON)) {
+	HandleMouseButtonByKeymap(VK_MBUTTON, false, &m_nPendingMButtonCommand);
+	if (m_nPendingMButtonCommand > 0) {
 		return 0;
 	}
 	StartDragging(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), false);
 	return 0;
 }
 
-LRESULT CMainDlg::OnMButtonUp(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/) {
-	EndDragging();
-	::ReleaseCapture();
+LRESULT CMainDlg::OnMButtonUp(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam, BOOL& /*bHandled*/) {
+	int nCommand = m_nPendingMButtonCommand;
+	m_nPendingMButtonCommand = -1;
+
+	CPoint releasePoint(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+	::ClientToScreen(m_hWnd, &releasePoint);
+	CRect windowRect;
+	GetWindowRect(&windowRect);
+	bool bReleasedWithinWindow = windowRect.PtInRect(releasePoint) != FALSE;
+
+	if (m_bDragging) {
+		EndDragging();
+	}
+	if (::GetCapture() == m_hWnd) {
+		::ReleaseCapture();
+	}
+	if (nCommand > 0 && bReleasedWithinWindow && !m_pPanelMgr->IsModalPanelShown()) {
+		ExecuteCommand(nCommand);
+	}
+	return 0;
+}
+
+LRESULT CMainDlg::OnCaptureChanged(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& bHandled) {
+	m_nPendingMButtonCommand = -1;
+	bHandled = TRUE;
+	return 0;
+}
+
+LRESULT CMainDlg::OnCancelMode(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& bHandled) {
+	m_nPendingMButtonCommand = -1;
+	bHandled = FALSE;
 	return 0;
 }
 
@@ -3409,7 +3439,10 @@ EProcessingFlags CMainDlg::CreateDefaultProcessingFlags(bool bKeepParams) {
 	return CreateProcessingFlags(m_bHQResampling, m_bAutoContrast, m_bAutoContrastSection, m_bLDC, bKeepParams, m_bLandscapeMode);
 }
 
-bool CMainDlg::HandleMouseButtonByKeymap(int nMouseButtonCode, bool bExecuteCommand) {
+bool CMainDlg::HandleMouseButtonByKeymap(int nMouseButtonCode, bool bExecuteCommand, int* pCommandId) {
+	if (pCommandId != NULL) {
+		*pCommandId = -1;
+	}
 	if (m_pPanelMgr->IsModalPanelShown()) {
 		return false;
 	}
@@ -3417,6 +3450,9 @@ bool CMainDlg::HandleMouseButtonByKeymap(int nMouseButtonCode, bool bExecuteComm
 	bool bCtrl = (::GetKeyState(VK_CONTROL) & 0x8000) != 0;
 	bool bShift = (::GetKeyState(VK_SHIFT) & 0x8000) != 0;
 	int nCommand = m_pKeyMap->GetCommandIdForKey(nMouseButtonCode, bAlt, bCtrl, bShift);
+	if (pCommandId != NULL) {
+		*pCommandId = nCommand;
+	}
 	if (nCommand > 0) {
 		if (bExecuteCommand) {
 			ExecuteCommand(nCommand);
