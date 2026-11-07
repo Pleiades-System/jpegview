@@ -79,7 +79,9 @@ public:
 	// of the next item is returned (in most situation the same object)
 	CFileList* Next();
 	// Move to previous file in list. The filelist object of the prev item is returned.
-	CFileList* Prev();
+	// If bAllowNewFolder is false, only the already known folder history is walked and
+	// no file list for a not yet visited folder is created.
+	CFileList* Prev(bool bAllowNewFolder = true);
 	// Move to first file in current folder (according to sort order)
 	void First();
 	// Move to last file in current folder (according to sort order)
@@ -175,6 +177,7 @@ private:
 	CFileList* FindFileRecursively (const CString& sDirectory, const CString& sFindAfter, 
 		bool bSearchThisFolder, int nLevel, int nRecursion);
 	CFileList* TryCreateFileList(const CString& directory, int nNewLevel);
+	CFileList* FindFileListInChain(const CString& sDirectory);
 	CFileList* WrapToNextImage();
 	CFileList* WrapToPrevImage();
 	void FindFiles();
