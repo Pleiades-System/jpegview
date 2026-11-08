@@ -172,6 +172,7 @@ private:
 
 	void MoveIterToLast();
 	void NextInFolder();
+	CFileList* FindSiblingImage(bool bForward);
 	CFileList* GotoFirstShown();
 	std::list<CFileDesc>::iterator FindFile(const CString& sName);
 	CFileList* FindFileRecursively (const CString& sDirectory, const CString& sFindAfter, 
