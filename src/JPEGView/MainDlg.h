@@ -343,6 +343,8 @@ private:
 	bool m_bWindowBorderless;
 	bool m_bAlwaysOnTop;
 	bool m_bSelectZoom;  // keeps track of select-to-zoom mode when CTRL+SHIFT+LMouse
+	bool m_bSuppressInitialShow;
+	bool m_bOpenFileDialogPending;
 
 	void ExploreFile();
 	bool OpenFileWithDialog(bool bFullScreen, bool bAfterStartup);

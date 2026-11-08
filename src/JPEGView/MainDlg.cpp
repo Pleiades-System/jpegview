@@ -303,6 +303,8 @@ CMainDlg::CMainDlg(bool bForceFullScreen) {
 	m_bWindowBorderless = sp.WindowBorderlessOnStartup();  // unlike AlwaysOnTop, this is set early on initialize as it affects calculations of the window size, position, etc
 	m_bAlwaysOnTop = false;  // default normal window.  this will be set to true when AlwaysOnTop is toggled if set to startup in INI
 	m_bSelectZoom = false;  // this value is set when LButtonDown happens, to be read by LButtonUp
+	m_bSuppressInitialShow = true;
+	m_bOpenFileDialogPending = false;
 
 	m_pPanelMgr = new CPanelMgr();
 	m_pZoomNavigatorCtl = NULL;
@@ -437,12 +439,9 @@ LRESULT CMainDlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam
 		} else {
 			AdjustWindowToImage(true);
 		}
-		if (sp.DefaultMaximized()) {
-			this->ShowWindow(SW_MAXIMIZE);
-		}
 	} else {
 		PrefetchDIB(m_monitorRect);
-		SetWindowLong(GWL_STYLE, WS_VISIBLE);
+		SetWindowLong(GWL_STYLE, GetWindowLongW(GWL_STYLE) & WS_VISIBLE);
 		SetWindowPos(HWND_TOP, &m_monitorRect, SWP_NOZORDER);
 		SetWindowPos(NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOCOPYBITS | SWP_FRAMECHANGED);
 	}
@@ -462,6 +461,12 @@ LRESULT CMainDlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam
 	this->Invalidate(FALSE);
 
 	this->DragAcceptFiles();
+
+	m_bSuppressInitialShow = false;
+	this->ShowWindow(!m_bFullScreenMode && sp.DefaultMaximized() ? SW_MAXIMIZE : SW_SHOW);
+	if (m_bOpenFileDialogPending) {
+		this->Invalidate(FALSE);
+	}
 
 	return TRUE;
 }
@@ -486,11 +491,18 @@ LRESULT CMainDlg::OnPaint(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, B
 		if (m_sStartupFile.IsEmpty()) {
 			if (CSettingsProvider::This().SkipFileOpenDialogOnStartup())
 				m_isBeforeFileSelected = false;
+			else if (m_bSuppressInitialShow)
+				m_bOpenFileDialogPending = true;
 			else {
 				OpenFileWithDialog(true, true);
 				Invalidate(TRUE);
 			}
 		}
+	}
+	if (m_bOpenFileDialogPending && !m_bSuppressInitialShow) {
+		m_bOpenFileDialogPending = false;
+		OpenFileWithDialog(true, true);
+		Invalidate(TRUE);
 	}
 
 	CPaintDC dc(m_hWnd);
@@ -2289,10 +2301,12 @@ void CMainDlg::ExecuteCommand(int nCommand) {
 // Setting window styles have gotten out of hand with the addition of no title bar
 // instead of each call trying to figure out the logic, consolidate it to one function
 LONG CMainDlg::SetCurrentWindowStyle() {
+	LONG currentStyle = this->GetWindowLongW(GWL_STYLE);
+	LONG visibleStyle = currentStyle & WS_VISIBLE;
 	if (!m_bWindowBorderless) {
-		return this->SetWindowLongW(GWL_STYLE, this->GetWindowLongW(GWL_STYLE) | WS_OVERLAPPEDWINDOW | WS_VISIBLE);
+		return this->SetWindowLongW(GWL_STYLE, currentStyle | WS_OVERLAPPEDWINDOW | visibleStyle);
 	} else {
-		return this->SetWindowLongW(GWL_STYLE, this->GetWindowLongW(GWL_STYLE) & ~WS_OVERLAPPEDWINDOW | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_VISIBLE);  // lose resizing
+		return this->SetWindowLongW(GWL_STYLE, (currentStyle & ~WS_OVERLAPPEDWINDOW) | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | visibleStyle);  // lose resizing
 		// just doing (& ~WS_CAPTION) leads to having a sliver of white bar on top but allows for resizing
 	}
 }
