@@ -61,6 +61,35 @@
 static const int MIN_WND_WIDTH = 320;
 static const int MIN_WND_HEIGHT = 240;
 
+static const int WINDOW_RESIZE_LEFT = 1;
+static const int WINDOW_RESIZE_TOP = 2;
+static const int WINDOW_RESIZE_RIGHT = 4;
+static const int WINDOW_RESIZE_BOTTOM = 8;
+
+static int GetWindowResizeEdges(const RECT& windowRect, const POINT& point, int borderWidth, int borderHeight) {
+	bool left = point.x >= windowRect.left && point.x < windowRect.left + borderWidth;
+	bool right = point.x < windowRect.right && point.x >= windowRect.right - borderWidth;
+	bool top = point.y >= windowRect.top && point.y < windowRect.top + borderHeight;
+	bool bottom = point.y < windowRect.bottom && point.y >= windowRect.bottom - borderHeight;
+
+	int edges = 0;
+	if (left) edges |= WINDOW_RESIZE_LEFT;
+	else if (right) edges |= WINDOW_RESIZE_RIGHT;
+	if (top) edges |= WINDOW_RESIZE_TOP;
+	else if (bottom) edges |= WINDOW_RESIZE_BOTTOM;
+	return edges;
+}
+
+static LPCTSTR GetWindowResizeCursor(int edges) {
+	bool horizontal = (edges & (WINDOW_RESIZE_LEFT | WINDOW_RESIZE_RIGHT)) != 0;
+	bool vertical = (edges & (WINDOW_RESIZE_TOP | WINDOW_RESIZE_BOTTOM)) != 0;
+	if (horizontal && vertical) {
+		bool sameDirection = ((edges & WINDOW_RESIZE_LEFT) != 0) == ((edges & WINDOW_RESIZE_TOP) != 0);
+		return sameDirection ? IDC_SIZENWSE : IDC_SIZENESW;
+	}
+	return horizontal ? IDC_SIZEWE : IDC_SIZENS;
+}
+
 static const double GAMMA_FACTOR = 1.02; // multiplicator for gamma value
 static const double CONTRAST_INC = 0.03; // increment for contrast value
 static const double SHARPEN_INC = 0.05; // increment for sharpen value
@@ -239,6 +268,9 @@ CMainDlg::CMainDlg(bool bForceFullScreen) {
 	m_bWindowMoveCandidate = false;
 	m_bReplayingWindowMoveClick = false;
 	m_windowMoveStart = CPoint(0, 0);
+	m_nWindowResizeEdges = 0;
+	m_windowResizeStart = CPoint(0, 0);
+	m_windowResizeRect.SetRectEmpty();
 	m_offsets = CPoint(0, 0);
 	m_DIBOffsets = CPoint(0, 0);
 	m_nCapturedX = m_nCapturedY = 0;
@@ -750,6 +782,24 @@ LRESULT CMainDlg::OnClose(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam, BOOL&
 }
 
 LRESULT CMainDlg::OnLButtonDown(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam, BOOL& /*bHandled*/) {
+	if (m_bWindowBorderless && !m_bFullScreenMode) {
+		CPoint screenPoint;
+		::GetCursorPos(&screenPoint);
+		CRect windowRect;
+		GetWindowRect(&windowRect);
+		int borderWidth = max(6, ::GetSystemMetrics(SM_CXSIZEFRAME));
+		int borderHeight = max(6, ::GetSystemMetrics(SM_CYSIZEFRAME));
+		int edges = GetWindowResizeEdges(windowRect, screenPoint, borderWidth, borderHeight);
+		if (edges != 0) {
+			m_nWindowResizeEdges = edges;
+			m_windowResizeStart = screenPoint;
+			m_windowResizeRect = windowRect;
+			m_dZoomAtResizeStart = m_dZoom;
+			::SetCapture(m_hWnd);
+			return 0;
+		}
+	}
+
 	this->SetCapture();
 	CPoint pointClicked(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
 	bool bAlt = (::GetKeyState(VK_MENU) & 0x8000) != 0;
@@ -800,6 +850,14 @@ LRESULT CMainDlg::OnLButtonDown(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam,
 }
 
 LRESULT CMainDlg::OnLButtonUp(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam, BOOL& /*bHandled*/) {
+	if (m_nWindowResizeEdges != 0) {
+		m_nWindowResizeEdges = 0;
+		if (::GetCapture() == m_hWnd) {
+			::ReleaseCapture();
+		}
+		return 0;
+	}
+
 	if (m_bWindowMoveCandidate) {
 		m_bWindowMoveCandidate = false;
 		m_bReplayingWindowMoveClick = true;
@@ -892,12 +950,18 @@ LRESULT CMainDlg::OnMButtonUp(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam, B
 
 LRESULT CMainDlg::OnCaptureChanged(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& bHandled) {
 	m_nPendingMButtonCommand = -1;
+	m_nWindowResizeEdges = 0;
 	bHandled = TRUE;
 	return 0;
 }
 
 LRESULT CMainDlg::OnCancelMode(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& bHandled) {
 	m_nPendingMButtonCommand = -1;
+	bool wasResizingWindow = m_nWindowResizeEdges != 0;
+	m_nWindowResizeEdges = 0;
+	if (wasResizingWindow && ::GetCapture() == m_hWnd) {
+		::ReleaseCapture();
+	}
 	bHandled = FALSE;
 	return 0;
 }
@@ -945,6 +1009,33 @@ LRESULT CMainDlg::OnMouseMove(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam, B
 	int nOldMouseX = m_nMouseX;
 	m_nMouseX = GET_X_LPARAM(lParam);
 	m_nMouseY = GET_Y_LPARAM(lParam);
+	if (m_nWindowResizeEdges != 0) {
+		CPoint screenPoint;
+		::GetCursorPos(&screenPoint);
+		int dx = screenPoint.x - m_windowResizeStart.x;
+		int dy = screenPoint.y - m_windowResizeStart.y;
+		CRect windowRect = m_windowResizeRect;
+		CSize minSize = CSettingsProvider::This().MinimalWindowSize();
+		int minWidth = max(1, minSize.cx);
+		int minHeight = max(1, minSize.cy);
+
+		if (m_nWindowResizeEdges & WINDOW_RESIZE_LEFT) {
+			windowRect.left = min(m_windowResizeRect.left + dx, m_windowResizeRect.right - minWidth);
+		} else if (m_nWindowResizeEdges & WINDOW_RESIZE_RIGHT) {
+			windowRect.right = max(m_windowResizeRect.right + dx, m_windowResizeRect.left + minWidth);
+		}
+		if (m_nWindowResizeEdges & WINDOW_RESIZE_TOP) {
+			windowRect.top = min(m_windowResizeRect.top + dy, m_windowResizeRect.bottom - minHeight);
+		} else if (m_nWindowResizeEdges & WINDOW_RESIZE_BOTTOM) {
+			windowRect.bottom = max(m_windowResizeRect.bottom + dy, m_windowResizeRect.top + minHeight);
+		}
+
+		::SetWindowPos(m_hWnd, NULL, windowRect.left, windowRect.top, windowRect.Width(), windowRect.Height(),
+			SWP_NOZORDER | SWP_NOACTIVATE);
+		::SetCursor(::LoadCursor(NULL, GetWindowResizeCursor(m_nWindowResizeEdges)));
+		return 0;
+	}
+
 	if (m_bWindowMoveCandidate) {
 		int nDragWidth = ::GetSystemMetrics(SM_CXDRAG);
 		int nDragHeight = ::GetSystemMetrics(SM_CYDRAG);
@@ -987,6 +1078,18 @@ LRESULT CMainDlg::OnMouseMove(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam, B
 	if (!m_bPanMouseCursorSet && !bMouseCursorSet) {
 		if (!m_pPanelMgr->MouseCursorCaptured()) {
 			::SetCursor(::LoadCursor(NULL, IDC_ARROW));
+		}
+	}
+	if (m_bWindowBorderless && !m_bFullScreenMode) {
+		CPoint screenPoint;
+		::GetCursorPos(&screenPoint);
+		CRect windowRect;
+		GetWindowRect(&windowRect);
+		int borderWidth = max(6, ::GetSystemMetrics(SM_CXSIZEFRAME));
+		int borderHeight = max(6, ::GetSystemMetrics(SM_CYSIZEFRAME));
+		int edges = GetWindowResizeEdges(windowRect, screenPoint, borderWidth, borderHeight);
+		if (edges != 0) {
+			::SetCursor(::LoadCursor(NULL, GetWindowResizeCursor(edges)));
 		}
 	}
 

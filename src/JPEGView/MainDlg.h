@@ -284,6 +284,9 @@ private:
 	bool m_bWindowMoveCandidate;
 	bool m_bReplayingWindowMoveClick;
 	CPoint m_windowMoveStart;
+	int m_nWindowResizeEdges;
+	CPoint m_windowResizeStart;
+	CRect m_windowResizeRect;
 	bool m_bMovieMode;
 	double m_dMovieFPS;
 	bool m_bProcFlagsTouched;
