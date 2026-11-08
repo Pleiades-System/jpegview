@@ -223,6 +223,23 @@ static LPCTSTR* GetSupportedFileEndingList() {
 	return sFileEndings;
 }
 
+static void FindImagesInDirectory(const CString& sDirectory, std::list<CFileDesc>& fileList) {
+	if (sDirectory.IsEmpty()) {
+		return;
+	}
+	CFindFile fileFind;
+	LPCTSTR* allFileEndings = GetSupportedFileEndingList();
+	for (int i = 0; i < nNumEndings; i++) {
+		if (fileFind.FindFile(sDirectory + _T("\\*.") + allFileEndings[i])) {
+			AddToFileList(fileList, fileFind, allFileEndings[i]);
+			while (fileFind.FindNextFile()) {
+				AddToFileList(fileList, fileFind, allFileEndings[i]);
+			}
+		}
+	}
+	fileList.sort();
+}
+
 CFileList::CFileList(const CString & sInitialFile, CDirectoryWatcher & directoryWatcher, 
 	Helpers::ESorting eInitialSorting, bool isSortedAscending, bool bWrapAroundFolder, int nLevel, bool forceSorting)
 	: m_directoryWatcher(directoryWatcher) {
@@ -577,6 +594,107 @@ const FILETIME* CFileList::CurrentModificationTime() const {
 LPCTSTR CFileList::PeekNextPrev(int nIndex, bool bForward, bool bToggle) {
 	if (bToggle) {
 		return (m_nMarkedIndexShow == 0) ? m_sMarkedFile : m_sMarkedFileCurrent;
+	} else if (sm_eMode == Helpers::NM_LoopSameDirectoryLevel) {
+		if (nIndex == 0) {
+			return Current();
+		}
+		if (!m_fileList.empty() && m_iter == m_fileList.end()) {
+			return NULL;
+		}
+		if (m_iter != m_fileList.end()) {
+			std::list<CFileDesc>::iterator fastIter = m_iter;
+			bool bInsideCurrentDirectory = true;
+			for (int i = 0; i < nIndex; ++i) {
+				if (bForward) {
+					if (++fastIter == m_fileList.end()) {
+						bInsideCurrentDirectory = false;
+						break;
+					}
+				} else if (fastIter == m_fileList.begin()) {
+					bInsideCurrentDirectory = false;
+					break;
+				} else {
+					--fastIter;
+				}
+			}
+			if (bInsideCurrentDirectory) {
+				return fastIter->GetName();
+			}
+		}
+		CString sCurrentFile = Current() != NULL ? Current() : _T("");
+		CString sDirectory = m_sDirectory;
+		std::vector<CString> fileNames;
+		for (std::list<CFileDesc>::const_iterator iter = m_fileList.begin(); iter != m_fileList.end(); ++iter) {
+			fileNames.push_back(iter->GetName());
+		}
+		int nFileIndex = -1;
+		for (size_t i = 0; i < fileNames.size(); ++i) {
+			if (fileNames[i].CompareNoCase(sCurrentFile) == 0) {
+				nFileIndex = (int)i;
+				break;
+			}
+		}
+
+		CString sResult = sCurrentFile;
+		for (int i = 0; i < nIndex; ++i) {
+			int nNextFileIndex = bForward ? nFileIndex + 1 : nFileIndex - 1;
+			if (nNextFileIndex >= 0 && nNextFileIndex < (int)fileNames.size()) {
+				nFileIndex = nNextFileIndex;
+				sResult = fileNames[nFileIndex];
+				continue;
+			}
+
+			CString sParentDirectory;
+			std::list<CString> dirList;
+			bool bFoundNext = false;
+			if (CollectSiblingDirectories(sDirectory, sParentDirectory, dirList)) {
+				std::vector<CString> dirs(dirList.begin(), dirList.end());
+				int nCurrentDir = -1;
+				CString sDirectoryTitle = sDirectory.Right(sDirectory.GetLength() - sDirectory.ReverseFind(_T('\\')) - 1);
+				for (int j = 0; j < (int)dirs.size(); ++j) {
+					if (dirs[j].CompareNoCase(sDirectoryTitle) == 0) {
+						nCurrentDir = j;
+						break;
+					}
+				}
+				int nDirectoryCount = (int)dirs.size();
+				if (nCurrentDir >= 0) {
+					for (int nStep = 1; nStep < nDirectoryCount; ++nStep) {
+						int nIndexDir = bForward ? nCurrentDir + nStep : nCurrentDir - nStep;
+						if (m_bWrapAroundFolder) {
+							nIndexDir = (nIndexDir + nDirectoryCount) % nDirectoryCount;
+						} else if (nIndexDir < 0 || nIndexDir >= nDirectoryCount) {
+							break;
+						}
+						CString sCandidateDirectory = sParentDirectory + _T("\\") + dirs[nIndexDir];
+						std::list<CFileDesc> candidateFiles;
+						FindImagesInDirectory(sCandidateDirectory, candidateFiles);
+						if (candidateFiles.empty()) {
+							continue;
+						}
+						fileNames.clear();
+						for (std::list<CFileDesc>::const_iterator iter = candidateFiles.begin(); iter != candidateFiles.end(); ++iter) {
+							fileNames.push_back(iter->GetName());
+						}
+						sDirectory = sCandidateDirectory;
+						nFileIndex = bForward ? 0 : (int)fileNames.size() - 1;
+						sResult = fileNames[nFileIndex];
+						bFoundNext = true;
+						break;
+					}
+				}
+			}
+			if (!bFoundNext && m_bWrapAroundFolder && !fileNames.empty()) {
+				nFileIndex = bForward ? 0 : (int)fileNames.size() - 1;
+				sResult = fileNames[nFileIndex];
+				bFoundNext = true;
+			}
+			if (!bFoundNext) {
+				break;
+			}
+		}
+		m_sPeekResult = sResult;
+		return m_sPeekResult.IsEmpty() ? NULL : (LPCTSTR)m_sPeekResult;
 	} else {
 		std::list<CFileDesc>::iterator thisIter = m_iter;
 		LPCTSTR sFileName;
@@ -754,8 +872,7 @@ CFileList* CFileList::FindSiblingImage(bool bForward) {
 		return NULL;
 	}
 
-	int nMaxStep = m_bWrapAroundFolder ? nCount : nCount - 1;
-	for (int nStep = 1; nStep <= nMaxStep; nStep++) {
+	for (int nStep = 1; nStep < nCount; nStep++) {
 		int nIndex = bForward ? nCurrent + nStep : nCurrent - nStep;
 		if (m_bWrapAroundFolder) {
 			nIndex = (nIndex + nCount) % nCount;
@@ -764,36 +881,47 @@ CFileList* CFileList::FindSiblingImage(bool bForward) {
 		}
 
 		CString sDirectory = sParentDirectory + '\\' + dirs[nIndex] + '\\';
-		CFileList* pFileList = FindFileListInChain(sDirectory);
-		if (pFileList == NULL) {
-			CFileList* pNewList = new CFileList(sDirectory, m_directoryWatcher, CFileDesc::GetSorting(),
-				CFileDesc::IsSortedAscending(), m_bWrapAroundFolder, 0);
-			if (pNewList->m_fileList.empty()) {
-				delete pNewList;
-				continue;
-			}
-			pNewList->m_prev = this;
-			pNewList->m_next = m_next;
-			if (m_next != NULL) {
-				m_next->m_prev = pNewList;
-			}
-			m_next = pNewList;
-			pFileList = pNewList;
-		}
-		if (pFileList->m_fileList.empty()) {
+		if (!LoadSiblingDirectory(sDirectory.Left(sDirectory.GetLength() - 1), bForward)) {
 			continue;
 		}
+		return this;
+	}
 
+	if (m_bWrapAroundFolder && !m_fileList.empty()) {
 		if (bForward) {
-			pFileList->m_iter = pFileList->m_fileList.begin();
+			m_iter = m_fileList.begin();
 		} else {
-			pFileList->m_iter = pFileList->m_fileList.end();
-			pFileList->m_iter--;
+			m_iter = m_fileList.end();
+			m_iter--;
 		}
-		return pFileList;
+		return this;
 	}
 
 	return NULL;
+}
+
+bool CFileList::LoadSiblingDirectory(const CString& sDirectory, bool bForward) {
+	std::list<CFileDesc> newFileList;
+	FindImagesInDirectory(sDirectory, newFileList);
+	if (newFileList.empty()) {
+		return false;
+	}
+
+	m_fileList.swap(newFileList);
+	m_sDirectory = sDirectory;
+	if (m_fileList.empty()) {
+		m_iter = m_fileList.end();
+	} else if (bForward) {
+		m_iter = m_fileList.begin();
+	} else {
+		m_iter = m_fileList.end();
+		--m_iter;
+	}
+	m_sInitialFile = (m_iter != m_fileList.end()) ? m_iter->GetName() : sDirectory;
+	m_iterStart = m_fileList.begin();
+	m_nLevel = 0;
+	m_directoryWatcher.SetCurrentDirectory(m_sDirectory);
+	return true;
 }
 
 CFileList* CFileList::FindFileRecursively (const CString& sDirectory, const CString& sFindAfter,
@@ -859,27 +987,6 @@ CFileList* CFileList::WrapToPrevImage() {
 	return this;
 }
 
-// Returns the file list of sDirectory if it is already part of this folder chain, otherwise NULL.
-// sDirectory has a trailing backslash, the file lists store the directory without it.
-CFileList* CFileList::FindFileListInChain(const CString& sDirectory) {
-	CString sDir = sDirectory;
-	if (sDir.GetLength() > 0 && sDir[sDir.GetLength() - 1] == _T('\\')) {
-		sDir = sDir.Left(sDir.GetLength() - 1);
-	}
-	CFileList* pList;
-	for (pList = this; pList != NULL; pList = pList->m_prev) {
-		if (pList->m_sDirectory.CompareNoCase(sDir) == 0) {
-			return pList;
-		}
-	}
-	for (pList = this->m_next; pList != NULL; pList = pList->m_next) {
-		if (pList->m_sDirectory.CompareNoCase(sDir) == 0) {
-			return pList;
-		}
-	}
-	return NULL;
-}
-
 void CFileList::NextInFolder() {
 	if (m_fileList.size() > 0) {
 		m_iter++;
@@ -929,20 +1036,7 @@ CFileList* CFileList::TryCreateFileList(const CString& directory, int nNewLevel)
 
 void CFileList::FindFiles() {
 	m_fileList.clear();
-	if (!m_sDirectory.IsEmpty()) {
-		CFindFile fileFind;
-		LPCTSTR* allFileEndings = GetSupportedFileEndingList();
-		for (int i = 0; i < nNumEndings; i++) {
-			if (fileFind.FindFile(m_sDirectory + _T("\\*.") + allFileEndings[i])) {
-				AddToFileList(m_fileList, fileFind, allFileEndings[i]);
-				while (fileFind.FindNextFile()) {
-					AddToFileList(m_fileList, fileFind, allFileEndings[i]);
-				}
-			}
-		}
-	}
-
-	m_fileList.sort();
+	FindImagesInDirectory(m_sDirectory, m_fileList);
 }
 
 void CFileList::VerifyFiles() {

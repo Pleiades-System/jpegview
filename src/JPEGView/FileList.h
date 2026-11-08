@@ -79,8 +79,7 @@ public:
 	// of the next item is returned (in most situation the same object)
 	CFileList* Next();
 	// Move to previous file in list. The filelist object of the prev item is returned.
-	// If bAllowNewFolder is false, only the already known folder history is walked and
-	// no file list for a not yet visited folder is created.
+	// In recursive navigation, bAllowNewFolder=false restricts the move to known history.
 	CFileList* Prev(bool bAllowNewFolder = true);
 	// Move to first file in current folder (according to sort order)
 	void First();
@@ -122,9 +121,12 @@ public:
 	void ToggleBetweenMarkedAndCurrentFile();
 
 	// Sets a checkpoint on the current image
-	void SetCheckpoint() { m_iterCheckPoint = m_iter; }
+	void SetCheckpoint() { m_sFileCheckPoint = Current() != NULL ? Current() : _T(""); }
 	// Check if we are now on another image since the last checkpoint was set
-	bool ChangedSinceCheckpoint() { return m_iterCheckPoint != m_iter; }
+	bool ChangedSinceCheckpoint() {
+		LPCTSTR sCurrent = Current();
+		return sCurrent == NULL ? !m_sFileCheckPoint.IsEmpty() : m_sFileCheckPoint.Compare(sCurrent) != 0;
+	}
 
 	// Returns if the current file list is based on a slide show text file
 	bool IsSlideShowList() const { return m_bIsSlideShowList; }
@@ -156,13 +158,14 @@ private:
 	int m_nLevel;
 	CString m_sInitialFile;
 	CString m_sDirectory;
-	// filelists for several folders are chained
+	// Recursive subdirectory navigation links its per-folder lists; sibling navigation does not.
 	CFileList* m_next;
 	CFileList* m_prev;
 	std::list<CFileDesc> m_fileList;
 	std::list<CFileDesc>::iterator m_iter; // current position in m_fileList
 	std::list<CFileDesc>::iterator m_iterStart; // start of iteration in m_fileList
-	std::list<CFileDesc>::iterator m_iterCheckPoint;
+	CString m_sFileCheckPoint;
+	CString m_sPeekResult;
 
 	CString m_sMarkedFile;
 	CString m_sMarkedFileCurrent;
@@ -173,12 +176,12 @@ private:
 	void MoveIterToLast();
 	void NextInFolder();
 	CFileList* FindSiblingImage(bool bForward);
+	bool LoadSiblingDirectory(const CString& sDirectory, bool bForward);
 	CFileList* GotoFirstShown();
 	std::list<CFileDesc>::iterator FindFile(const CString& sName);
 	CFileList* FindFileRecursively (const CString& sDirectory, const CString& sFindAfter, 
 		bool bSearchThisFolder, int nLevel, int nRecursion);
 	CFileList* TryCreateFileList(const CString& directory, int nNewLevel);
-	CFileList* FindFileListInChain(const CString& sDirectory);
 	CFileList* WrapToNextImage();
 	CFileList* WrapToPrevImage();
 	void FindFiles();

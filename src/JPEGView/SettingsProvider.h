@@ -85,6 +85,10 @@ public:
 	Helpers::EDeleteConfirmation DeleteConfirmation() { return m_eDeleteConfirmation; }
 	bool AllowFileDeletion() { return m_bAllowFileDeletion; }
 	bool WrapAroundFolder() { return m_bWrapAroundFolder && m_eNavigation == Helpers::NM_LoopDirectory; }
+	bool WrapAroundFolderNavigation() {
+		return m_bWrapAroundFolder &&
+			(m_eNavigation == Helpers::NM_LoopDirectory || m_eNavigation == Helpers::NM_LoopSameDirectoryLevel);
+	}
 	bool ExchangeXButtons() { return m_bExchangeXButtons; }
 	bool AutoRotateEXIF() { return m_bAutoRotateEXIF; }
 	bool UseEmbeddedColorProfiles() { return m_bUseEmbeddedColorProfiles; }

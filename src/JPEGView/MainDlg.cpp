@@ -381,7 +381,7 @@ LRESULT CMainDlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam
 
 	// intitialize list of files to show with startup file (and folder)
 	m_pFileList = new CFileList(m_sStartupFile, *m_pDirectoryWatcher,
-		(m_eForcedSorting == Helpers::FS_Undefined) ? sp.Sorting() : m_eForcedSorting, sp.IsSortedAscending(), sp.WrapAroundFolder(),
+		(m_eForcedSorting == Helpers::FS_Undefined) ? sp.Sorting() : m_eForcedSorting, sp.IsSortedAscending(), sp.WrapAroundFolderNavigation(),
 		0, m_eForcedSorting != Helpers::FS_Undefined);
 	m_pFileList->SetNavigationMode(sp.Navigation());
 
@@ -2285,7 +2285,7 @@ void CMainDlg::OpenFile(LPCTSTR sFileName, bool bAfterStartup) {
 	bool oOldAscending = m_pFileList->IsSortedAscending();
 	delete m_pFileList;
 	m_sStartupFile = sFileName;
-	m_pFileList = new CFileList(m_sStartupFile, *m_pDirectoryWatcher, eOldSorting, oOldAscending, CSettingsProvider::This().WrapAroundFolder());
+	m_pFileList = new CFileList(m_sStartupFile, *m_pDirectoryWatcher, eOldSorting, oOldAscending, CSettingsProvider::This().WrapAroundFolderNavigation());
 	// free current image and all read ahead images
 	InitParametersForNewImage();
 	m_pJPEGProvider->NotifyNotUsed(m_pCurrentImage);
@@ -2559,7 +2559,7 @@ void CMainDlg::GotoImage(EImagePosition ePos, int nFlags) {
 	// if we are at the last image,
 	// if we're at the last index of a multi-framed image (not animation)
 	// don't wrap around to index 0
-	bool bNoWrapAroundEdgeFrame = !CSettingsProvider::This().WrapAroundFolder() &&
+	bool bNoWrapAroundEdgeFrame = !CSettingsProvider::This().WrapAroundFolderNavigation() &&
 		(m_pCurrentImage == NULL ? false : m_pCurrentImage->NumberOfFrames() > 1 && !m_pCurrentImage->IsAnimation());
 
 	int nFrameIndex = 0;
