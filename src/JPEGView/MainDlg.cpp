@@ -471,6 +471,12 @@ LRESULT CMainDlg::OnPaint(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, B
 	static bool s_bFirst = true;
 
 	if (m_bLockPaint) {
+		CPaintDC dc(m_hWnd);
+		CRect clientRect;
+		GetClientRect(&clientRect);
+		CBrush backBrush;
+		backBrush.CreateSolidBrush(CSettingsProvider::This().ColorBackground());
+		dc.FillRect(&clientRect, backBrush);
 		return 0;
 	}
 
@@ -1442,7 +1448,12 @@ LRESULT CMainDlg::OnCtlColorEdit(UINT /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/
 }
 
 LRESULT CMainDlg::OnEraseBackground(UINT /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/, BOOL& bHandled) {
-	// prevent erasing background
+	CDC dc((HDC)wParam);
+	CRect clientRect;
+	GetClientRect(&clientRect);
+	CBrush backBrush;
+	backBrush.CreateSolidBrush(CSettingsProvider::This().ColorBackground());
+	dc.FillRect(&clientRect, backBrush);
 	bHandled = TRUE;
 	return TRUE;
 }
