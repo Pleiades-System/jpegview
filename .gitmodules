@@ -16,7 +16,7 @@
 	url = https://github.com/madler/zlib
 [submodule "extras/libjxl"]
 	path = extras/third_party/libjxl
-	url = https://github.com/libjxl/libjxl/
+	url = https://github.com/libjxl/libjxl
 [submodule "extras/libheif"]
 	path = extras/third_party/libheif/libheif
 	url = https://github.com/strukturag/libheif
@@ -37,4 +37,4 @@
 	url = https://github.com/mm2/Little-CMS
 [submodule "extras/third_party/LibRaw"]
 	path = extras/third_party/LibRaw
-	url = https://github.com/LibRaw/LibRaw/
+	url = https://github.com/LibRaw/LibRaw
