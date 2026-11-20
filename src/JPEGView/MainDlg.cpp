@@ -1459,13 +1459,10 @@ LRESULT CMainDlg::OnCtlColorEdit(UINT /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/
 	return (LRESULT)::GetStockObject(BLACK_BRUSH);
 }
 
-LRESULT CMainDlg::OnEraseBackground(UINT /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/, BOOL& bHandled) {
-	CDC dc((HDC)wParam);
-	CRect clientRect;
-	GetClientRect(&clientRect);
-	CBrush backBrush;
-	backBrush.CreateSolidBrush(CSettingsProvider::This().ColorBackground());
-	dc.FillRect(&clientRect, backBrush);
+LRESULT CMainDlg::OnEraseBackground(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& bHandled) {
+	// The background is completely covered by OnPaint, so erasing here would only cause
+	// flickering and, in some cases, a stale black frame that is not replaced until the
+	// next unrelated repaint (e.g. when toggling the EXIF display).
 	bHandled = TRUE;
 	return TRUE;
 }
