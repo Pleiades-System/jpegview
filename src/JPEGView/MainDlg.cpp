@@ -599,6 +599,10 @@ LRESULT CMainDlg::OnPaint(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, B
 			CPoint ptDIBStart = HelpersGUI::DrawDIB32bppWithBlackBorders(dc, bmInfo, pDIBData, backBrush, m_clientRect, clippedSize, m_DIBOffsets);
 			// The DIB is also blitted into the memory DCs of the panels
 			memDCMgr.BlitImageToMemDC(pDIBData, &bmInfo, ptDIBStart, m_pNavPanelCtl->CurrentBlendingFactor());
+		} else {
+			// The DIB cannot be created in rare cases (e.g. out of memory). Since erasing the
+			// background is suppressed, fill it here so that no stale pixels remain visible.
+			dc.FillRect(&m_clientRect, backBrush);
 		}
 		if (m_bZoomMode) m_offsets = unlimitedOffsets;
 	}
@@ -2346,8 +2350,14 @@ void CMainDlg::ApplyTitleBarTheme() {
 	bool bDarkCaption = GetColorLuminance(backColor) < 0.5;
 	// use the GUI color for the title text when it has enough contrast, otherwise fall back to black or white
 	COLORREF guiColor = sp.ColorGUI();
-	COLORREF textColor = (bDarkCaption == (GetColorLuminance(guiColor) >= 0.5)) ?
-		guiColor : (bDarkCaption ? RGB(255, 255, 255) : RGB(0, 0, 0));
+	double backLuminance = GetColorLuminance(backColor);
+	double guiLuminance = GetColorLuminance(guiColor);
+	// being on the same side of the 0.5 threshold is not enough - the two colors can still be
+	// almost identical (e.g. background RGB(128,128,128) and GUI color RGB(127,127,127)),
+	// so require a minimum luminance difference before using the GUI color for the caption text
+	bool bGuiColorHasContrast = (bDarkCaption == (guiLuminance >= 0.5)) &&
+		fabs(backLuminance - guiLuminance) >= 0.3;
+	COLORREF textColor = bGuiColorHasContrast ? guiColor : (bDarkCaption ? RGB(255, 255, 255) : RGB(0, 0, 0));
 
 	BOOL bDarkMode = bDarkCaption ? TRUE : FALSE;
 	if (FAILED(::DwmSetWindowAttribute(m_hWnd, DWM_ATTR_USE_IMMERSIVE_DARK_MODE, &bDarkMode, sizeof(bDarkMode)))) {
