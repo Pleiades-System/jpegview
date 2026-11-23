@@ -273,6 +273,7 @@ CMainDlg::CMainDlg(bool bForceFullScreen) {
 	m_bMovieMode = false;
 	m_bProcFlagsTouched = false;
 	m_bInTrackPopupMenu = false;
+	m_bTerminateAfterPopupMenu = false;
 	m_bResizeForNewImage = false;
 	m_dZoom = -1.0;
 	m_dRealizedZoom = -1.0;
@@ -3517,6 +3518,16 @@ int CMainDlg::TrackPopupMenu(CPoint pos, HMENU hMenu) {
 	int nMenuCmd = ::TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_RIGHTBUTTON | TPM_NONOTIFY | TPM_RETURNCMD, 
 		pos.x, pos.y, 0, this->m_hWnd, NULL);
 	m_bInTrackPopupMenu = false;
+
+	if (m_bTerminateAfterPopupMenu) {
+		// Termination was requested while the menu's modal loop was still running
+		// (see CleanupAndTerminate). The loop has ended now, so it is safe to
+		// end the dialog and to undo the deferred command.
+		m_bTerminateAfterPopupMenu = false;
+		CleanupAndTerminate();
+		return 0;
+	}
+
 	return nMenuCmd;
 }
 
@@ -3719,6 +3730,17 @@ void CMainDlg::CleanupAndTerminate() {
 	// Capture the final window rectangle for sticky-size persistence even when
 	// termination is initiated by a command and bypasses WM_CLOSE.
 	GetWindowRect(m_windowRectOnClose);
+	if (m_bInTrackPopupMenu) {
+		// A popup menu is showing and its modal loop still dispatches messages to
+		// this window, so a command bound to a mouse button (e.g. 'MouseM = IDM_EXIT')
+		// can get here while the menu is open. Ending the dialog right now would only
+		// hide the main window: the menu and the modal loop would keep the process
+		// alive until the menu is dismissed. Close the menu instead and let
+		// TrackPopupMenu() finish the termination once its loop has returned.
+		m_bTerminateAfterPopupMenu = true;
+		::EndMenu();
+		return;
+	}
 	StopMovieMode();
 	StopAnimation();
 	delete m_pJPEGProvider; // delete this early to properly shut down the loading threads

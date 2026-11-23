@@ -292,6 +292,7 @@ private:
 	bool m_bProcFlagsTouched;
 	EProcessingFlags m_eProcFlagsBeforeMovie;
 	bool m_bInTrackPopupMenu;
+	bool m_bTerminateAfterPopupMenu;
 	CPoint m_offsets; // Note: These offsets are center of image based
 	CPoint m_DIBOffsets;
 	int m_nCapturedX, m_nCapturedY;
